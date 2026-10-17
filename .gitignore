@@ -1,0 +1,20 @@
+# Credentials and tokens — never commit
+region.json
+tokens/
+oauth1_secret.json
+*.env
+secrets*
+secret*
+garmin_tokens.json
+.garminconnect/
+
+# Build artifacts
+/garmin
+/output/
+_output/
+*.test
+dist/
+
+# Local
+.DS_Store
+.zcode/

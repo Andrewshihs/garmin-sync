@@ -1,0 +1,343 @@
+// Package gear manages Garmin Connect gear (shoes, bikes, etc.).
+package gear
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Andrewshihs/garmin-sync/internal/client"
+)
+
+type Gear struct {
+	UUID        string   `json:"uuid,omitempty"`
+	GearPk      int64    `json:"gear_pk,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Make        string   `json:"make,omitempty"`
+	Model       string   `json:"model,omitempty"`
+	Type        string   `json:"type,omitempty"`
+	Status      string   `json:"status,omitempty"`
+	MaxMeters   float64  `json:"max_meters,omitempty"`
+	DateBegin   string   `json:"date_begin,omitempty"`
+	DateEnd     string   `json:"date_end,omitempty"`
+	TotalMeters *float64 `json:"total_meters,omitempty"`
+	Activities  *int     `json:"total_activities,omitempty"`
+}
+
+type Stats struct {
+	TotalMeters     float64 `json:"total_meters"`
+	TotalActivities int     `json:"total_activities"`
+}
+
+type gearRaw struct {
+	UUID            string  `json:"uuid"`
+	GearPk          int64   `json:"gearPk"`
+	GearMakeName    string  `json:"gearMakeName"`
+	GearModelName   string  `json:"gearModelName"`
+	CustomMakeModel string  `json:"customMakeModel"`
+	DisplayName     string  `json:"displayName"`
+	GearTypeName    string  `json:"gearTypeName"`
+	GearStatusName  string  `json:"gearStatusName"`
+	MaximumMeters   float64 `json:"maximumMeters"`
+	DateBegin       string  `json:"dateBegin"`
+	DateEnd         string  `json:"dateEnd"`
+}
+
+type statsRaw struct {
+	TotalDistance   float64 `json:"totalDistance"`
+	TotalActivities int     `json:"totalActivities"`
+}
+
+func (g gearRaw) toGear() Gear {
+	return Gear{
+		UUID:      g.UUID,
+		GearPk:    g.GearPk,
+		Name:      gearName(g),
+		Make:      g.GearMakeName,
+		Model:     g.GearModelName,
+		Type:      g.GearTypeName,
+		Status:    g.GearStatusName,
+		MaxMeters: g.MaximumMeters,
+		DateBegin: g.DateBegin,
+		DateEnd:   g.DateEnd,
+	}
+}
+
+func gearName(g gearRaw) string {
+	if s := strings.TrimSpace(g.DisplayName); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(g.CustomMakeModel); s != "" {
+		return s
+	}
+	mm := strings.TrimSpace(strings.TrimSpace(g.GearMakeName) + " " + strings.TrimSpace(g.GearModelName))
+	return mm
+}
+
+// List returns all gear for the given user profile.
+func List(ctx context.Context, c *client.Client, userProfilePk int64) ([]Gear, error) {
+	q := url.Values{"userProfilePk": {strconv.FormatInt(userProfilePk, 10)}}
+	var raw []gearRaw
+	if err := c.GetJSON(ctx, "/gear-service/gear/filterGear", q, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]Gear, 0, len(raw))
+	for _, g := range raw {
+		out = append(out, g.toGear())
+	}
+	return out, nil
+}
+
+// GetStats returns cumulative distance/activity totals for a gear item.
+func GetStats(ctx context.Context, c *client.Client, uuid string) (Stats, error) {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return Stats{}, fmt.Errorf("gear uuid is required")
+	}
+	var raw statsRaw
+	if err := c.GetJSON(ctx, "/gear-service/gear/stats/"+url.PathEscape(uuid), nil, &raw); err != nil {
+		return Stats{}, err
+	}
+	return Stats{TotalMeters: raw.TotalDistance, TotalActivities: raw.TotalActivities}, nil
+}
+
+// Get returns a single gear item (with stats) by uuid or name.
+func Get(ctx context.Context, c *client.Client, userProfilePk int64, query string) (Gear, error) {
+	g, err := Resolve(ctx, c, userProfilePk, query)
+	if err != nil {
+		return Gear{}, err
+	}
+	if st, err := GetStats(ctx, c, g.UUID); err == nil {
+		g.TotalMeters = &st.TotalMeters
+		g.Activities = &st.TotalActivities
+	}
+	return g, nil
+}
+
+// WithStats fetches per-gear cumulative stats and populates each gear in place.
+func WithStats(ctx context.Context, c *client.Client, gears []Gear) []Gear {
+	for i := range gears {
+		st, err := GetStats(ctx, c, gears[i].UUID)
+		if err != nil {
+			continue
+		}
+		m := st.TotalMeters
+		a := st.TotalActivities
+		gears[i].TotalMeters = &m
+		gears[i].Activities = &a
+	}
+	return gears
+}
+
+// CreateOptions describes a new gear item.
+type CreateOptions struct {
+	Type      string  // gear type name, e.g. "Shoes", "Bike" (default "Shoes")
+	Name      string  // user-facing name (required)
+	Make      string  // optional manufacturer
+	Model     string  // optional model
+	MaxMeters float64 // optional retirement threshold (0 = none)
+	DateBegin string  // YYYY-MM-DD (default today)
+}
+
+// Create adds a new gear item.
+//
+// The gear-service write contract is not officially documented; the request
+// body mirrors the gear object returned by reads. Garmin may reject unexpected
+// fields, in which case the API error is surfaced verbatim.
+func Create(ctx context.Context, c *client.Client, userProfilePk int64, opts CreateOptions) (Gear, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return Gear{}, fmt.Errorf("gear name is required")
+	}
+	typeName := strings.TrimSpace(opts.Type)
+	if typeName == "" {
+		typeName = "Shoes"
+	}
+	begin := strings.TrimSpace(opts.DateBegin)
+	if begin == "" {
+		begin = time.Now().In(time.Local).Format("2006-01-02")
+	}
+
+	body := map[string]any{
+		"userProfilePk":   userProfilePk,
+		"gearTypeName":    typeName,
+		"gearMakeName":    strings.TrimSpace(opts.Make),
+		"gearModelName":   strings.TrimSpace(opts.Model),
+		"customMakeModel": name,
+		"displayName":     name,
+		"maximumMeters":   opts.MaxMeters,
+		"dateBegin":       begin + "T00:00:00.0",
+		"gearStatusName":  "active",
+	}
+
+	var out gearRaw
+	if err := c.PostJSON(ctx, "/gear-service/gear", nil, body, &out); err != nil {
+		return Gear{}, err
+	}
+	return out.toGear(), nil
+}
+
+// SetStatus retires ("retired") or restores ("active") a gear item.
+//
+// It re-PUTs the existing gear object with the status field changed, preserving
+// all other fields. The gear-service write contract is reverse-engineered.
+func SetStatus(ctx context.Context, c *client.Client, userProfilePk int64, uuid, status string) (Gear, error) {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return Gear{}, fmt.Errorf("gear uuid is required")
+	}
+
+	var raw []map[string]any
+	q := url.Values{"userProfilePk": {strconv.FormatInt(userProfilePk, 10)}}
+	if err := c.GetJSON(ctx, "/gear-service/gear/filterGear", q, &raw); err != nil {
+		return Gear{}, err
+	}
+
+	var item map[string]any
+	for _, g := range raw {
+		if s, _ := g["uuid"].(string); strings.EqualFold(s, uuid) {
+			item = g
+			break
+		}
+	}
+	if item == nil {
+		return Gear{}, fmt.Errorf("gear %q not found", uuid)
+	}
+
+	item["gearStatusName"] = status
+	if status == "retired" {
+		item["dateEnd"] = time.Now().In(time.Local).Format("2006-01-02") + "T00:00:00.0"
+	} else {
+		item["dateEnd"] = nil
+	}
+
+	var out gearRaw
+	if err := c.PutJSON(ctx, "/gear-service/gear/"+url.PathEscape(uuid), nil, item, &out); err != nil {
+		return Gear{}, err
+	}
+	return out.toGear(), nil
+}
+
+// Link assigns a gear item to a completed activity.
+func Link(ctx context.Context, c *client.Client, uuid string, activityID int64) error {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return fmt.Errorf("gear uuid is required")
+	}
+	path := fmt.Sprintf("/gear-service/gear/link/%s/activity/%d", url.PathEscape(uuid), activityID)
+	return c.SendJSON(ctx, http.MethodPut, path, nil, nil, nil)
+}
+
+// Unlink removes a gear item from an activity.
+func Unlink(ctx context.Context, c *client.Client, uuid string, activityID int64) error {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return fmt.Errorf("gear uuid is required")
+	}
+	path := fmt.Sprintf("/gear-service/gear/unlink/%s/activity/%d", url.PathEscape(uuid), activityID)
+	return c.SendJSON(ctx, http.MethodPut, path, nil, nil, nil)
+}
+
+// ForActivity returns the gear linked to a given activity.
+func ForActivity(ctx context.Context, c *client.Client, activityID int64) ([]Gear, error) {
+	q := url.Values{"activityId": {strconv.FormatInt(activityID, 10)}}
+	var raw []gearRaw
+	if err := c.GetJSON(ctx, "/gear-service/gear/filterGear", q, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]Gear, 0, len(raw))
+	for _, g := range raw {
+		out = append(out, g.toGear())
+	}
+	return out, nil
+}
+
+// Resolve finds a gear item by uuid (exact) or by name (exact, then substring,
+// case-insensitive). It returns an error if the query matches no gear or is
+// ambiguous, listing the candidates so the caller can disambiguate by uuid.
+func Resolve(ctx context.Context, c *client.Client, userProfilePk int64, query string) (Gear, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return Gear{}, fmt.Errorf("gear name or uuid is required")
+	}
+	gears, err := List(ctx, c, userProfilePk)
+	if err != nil {
+		return Gear{}, err
+	}
+
+	for _, g := range gears {
+		if strings.EqualFold(g.UUID, query) {
+			return g, nil
+		}
+	}
+
+	var exact []Gear
+	for _, g := range gears {
+		if strings.EqualFold(strings.TrimSpace(g.Name), query) {
+			exact = append(exact, g)
+		}
+	}
+	if len(exact) == 1 {
+		return exact[0], nil
+	}
+	if len(exact) > 1 {
+		return Gear{}, ambiguousMatch(query, exact)
+	}
+
+	ql := strings.ToLower(query)
+	var sub []Gear
+	for _, g := range gears {
+		if strings.Contains(strings.ToLower(g.Name), ql) {
+			sub = append(sub, g)
+		}
+	}
+	if len(sub) == 1 {
+		return sub[0], nil
+	}
+	if len(sub) > 1 {
+		return Gear{}, ambiguousMatch(query, sub)
+	}
+	return Gear{}, fmt.Errorf("no gear matches %q", query)
+}
+
+func ambiguousMatch(query string, matches []Gear) error {
+	names := make([]string, 0, len(matches))
+	for _, g := range matches {
+		names = append(names, fmt.Sprintf("%s (%s)", g.Name, g.UUID))
+	}
+	return fmt.Errorf("%q matches multiple gear: %s", query, strings.Join(names, ", "))
+}
+
+// SetDefault marks a gear item as the default for an activity type, or clears
+// it. activityTypeID is the activity type's numeric id (see activity types).
+func SetDefault(ctx context.Context, c *client.Client, uuid string, activityTypeID int, isDefault bool) error {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return fmt.Errorf("gear uuid is required")
+	}
+	base := fmt.Sprintf("/gear-service/gear/%s/activityType/%d", url.PathEscape(uuid), activityTypeID)
+	if isDefault {
+		return c.SendJSON(ctx, http.MethodPut, base+"/default/true", nil, nil, nil)
+	}
+	return c.Delete(ctx, base, nil)
+}
+
+// FilterByStatus returns gear matching a status filter.
+// status: "active" (default), "retired", or "" / "all" for everything.
+func FilterByStatus(gears []Gear, status string) []Gear {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" || status == "all" {
+		return gears
+	}
+	out := make([]Gear, 0, len(gears))
+	for _, g := range gears {
+		if strings.EqualFold(strings.TrimSpace(g.Status), status) {
+			out = append(out, g)
+		}
+	}
+	return out
+}

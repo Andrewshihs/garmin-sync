@@ -1,0 +1,38 @@
+# Daily CN → Global activity sync (user systemd unit).
+# Install as ~/.config/systemd/user/garmin-sync.service, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now garmin-sync.timer
+#
+# A matching timer:
+#   [Unit]
+#   Description=Garmin CN to Global Sync timer
+#   [Timer]
+#   OnCalendar=*-*-* 02:00:00
+#   RandomizedDelaySec=300
+#   Persistent=true
+#   [Install]
+#   WantedBy=timers.target
+#
+# Adjust/remove the proxy environment to your network. NO_PROXY should cover
+# garmin.cn (directly reachable) while connectapi.garmin.com goes via proxy.
+
+[Unit]
+Description=Garmin CN to Global Sync
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sh -c "garmin auth status --profile cn --region cn -f json | grep -q authenticated"
+ExecStart=garmin sync --from cn --to global --limit 30 --delay 5
+# Environment="HTTPS_PROXY=http://127.0.0.1:7890"
+# Environment="HTTP_PROXY=http://127.0.0.1:7890"
+# Environment="NO_PROXY=amazonaws.com,garmin.cn,127.0.0.1,localhost"
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target
