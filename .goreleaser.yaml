@@ -3,7 +3,7 @@
 # Validate locally with: `make snapshot` (or `goreleaser release --snapshot --clean`).
 version: 2
 
-project_name: garmin-cli
+project_name: garmin-sync
 
 before:
   hooks:
