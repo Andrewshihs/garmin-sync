@@ -1,20 +1,32 @@
-# Credentials and tokens — never commit
-region.json
-tokens/
-oauth1_secret.json
-*.env
-secrets*
-secret*
-garmin_tokens.json
-.garminconnect/
+# Reference project
+_reference/
 
-# Build artifacts
+# Binaries
 /garmin
-/output/
-_output/
-*.test
-dist/
+/bin/
+/dist/
 
-# Local
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
-.zcode/
+Thumbs.db
+
+# Config (local dev)
+*.local.toml
