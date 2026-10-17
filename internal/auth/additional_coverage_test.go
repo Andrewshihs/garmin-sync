@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dghubble/oauth1"
 	"github.com/Andrewshihs/garmin-sync/internal/config"
+	"github.com/dghubble/oauth1"
 )
 
 type readErrorBody struct{}

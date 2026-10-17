@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dghubble/oauth1"
 	"github.com/Andrewshihs/garmin-sync/internal/config"
+	"github.com/dghubble/oauth1"
 )
 
 func getOAuth1Token(ctx context.Context, consumer oauthConsumer, ticket string) (OAuth1Token, error) {
