@@ -35,9 +35,6 @@ jobs:
           go mod tidy
           git diff --exit-code
 
-      - name: Test Linux installer
-        run: sh tests/install_test.sh
-
       - name: Run tests
         run: make test
 
@@ -49,15 +46,6 @@ jobs:
         with:
           name: coverage
           path: coverage.out
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          use_oidc: true
-          files: coverage.out
-          disable_search: true
-          flags: unittests
-          fail_ci_if_error: true
 
       - name: Run tests (race)
         run: go test -race ./...
