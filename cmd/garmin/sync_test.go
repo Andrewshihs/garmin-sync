@@ -120,21 +120,41 @@ func runSyncForFlagsTest(t *testing.T, args ...string) error {
 	return cmd.Execute()
 }
 
-func TestSyncFromToProfileAliasConflict(t *testing.T) {
-	err := runSyncForFlagsTest(t, "--from", "cn", "--from-profile", "other")
-	if err == nil || !strings.Contains(err.Error(), "use --from or --from-profile, not both") {
+func TestSyncSourceTargetAliasConflict(t *testing.T) {
+	for _, args := range [][]string{
+		{"--source", "cn", "--from", "other"},
+		{"--source", "cn", "--from-profile", "other"},
+		{"--from", "cn", "--from-profile", "other"},
+		{"--target", "global", "--to", "other"},
+		{"--target", "global", "--to-profile", "other"},
+		{"--to", "global", "--to-profile", "other"},
+	} {
+		err := runSyncForFlagsTest(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "use only one of") {
+			t.Fatalf("args=%v err=%v", args, err)
+		}
+	}
+}
+
+func TestSyncRegionAliasConflict(t *testing.T) {
+	err := runSyncForFlagsTest(t, "--source-region", "cn", "--from-region", "cn")
+	if err == nil || !strings.Contains(err.Error(), "use only one of --source-region/--from-region") {
 		t.Fatalf("err=%v", err)
 	}
-	err = runSyncForFlagsTest(t, "--to", "global", "--to-profile", "other")
-	if err == nil || !strings.Contains(err.Error(), "use --to or --to-profile, not both") {
+	err = runSyncForFlagsTest(t, "--target-region", "cn", "--to-region", "cn")
+	if err == nil || !strings.Contains(err.Error(), "use only one of --target-region/--to-region") {
 		t.Fatalf("err=%v", err)
 	}
 }
 
 func TestSyncInvalidRegionOverride(t *testing.T) {
-	err := runSyncForFlagsTest(t, "--from-region", "mars")
-	if err == nil || !strings.Contains(err.Error(), "invalid --from-region") {
+	err := runSyncForFlagsTest(t, "--source-region", "mars")
+	if err == nil || !strings.Contains(err.Error(), "invalid source region") {
 		t.Fatalf("err=%v", err)
+	}
+	err = runSyncForFlagsTest(t, "--from-region", "mars")
+	if err == nil || !strings.Contains(err.Error(), "invalid source region") {
+		t.Fatalf("legacy region alias err=%v", err)
 	}
 }
 

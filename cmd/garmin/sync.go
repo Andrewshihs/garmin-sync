@@ -84,9 +84,10 @@ type syncResult struct {
 }
 
 func NewSyncCmd(opts *globalOptions) *cobra.Command {
-	var fromProfile, toProfile string
-	var fromProfileAlias, toProfileAlias string
-	var fromRegion, toRegion string
+	var sourceProfile, targetProfile string
+	var fromAlias, toAlias, fromProfileAlias, toProfileAlias string
+	var sourceRegion, targetRegion string
+	var fromRegionAlias, toRegionAlias string
 	var limit int
 	var delay int
 	var dryRun bool
@@ -97,38 +98,57 @@ func NewSyncCmd(opts *globalOptions) *cobra.Command {
 		Long: `Sync activities from one Garmin Connect region to another.
 
 Activities are matched by name, type and start time; copies already present on
-the target side are skipped. This command ignores the global -p/--profile and
---region flags: regions default to what each profile was logged in with, and
---from-region/--to-region override them when needed.
+the target side are skipped (a persistent ledger also guards against
+re-uploading). This command ignores the global -p/--profile and --region
+flags: regions default to what each profile was logged in with, and
+--source-region/--target-region override them when needed.
+
+Legacy direction flags --from/--to/--from-profile/--to-profile/--from-region/
+--to-region remain supported as hidden aliases.
 
 Examples:
-  garmin sync --from cn --to global
-  garmin sync --from cn --to global --limit 20 --delay 5
+  garmin sync --source cn --target global
+  garmin sync --source cn --target global --limit 20 --delay 5
   garmin sync --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("from") && cmd.Flags().Changed("from-profile") {
-				return fmt.Errorf("use --from or --from-profile, not both")
+			pick := func(names, values []string) (string, error) {
+				chosen := ""
+				sets := 0
+				for i, n := range names {
+					if cmd.Flags().Changed(strings.TrimPrefix(n, "--")) {
+						sets++
+						chosen = values[i]
+					}
+				}
+				if sets > 1 {
+					return "", fmt.Errorf("use only one of %s", strings.Join(names, "/"))
+				}
+				return chosen, nil
 			}
-			if cmd.Flags().Changed("to") && cmd.Flags().Changed("to-profile") {
-				return fmt.Errorf("use --to or --to-profile, not both")
+
+			sourceProfile, err := pick(
+				[]string{"--source", "--from", "--from-profile"},
+				[]string{sourceProfile, fromAlias, fromProfileAlias})
+			if err != nil {
+				return err
 			}
-			if fromProfileAlias != "" {
-				fromProfile = fromProfileAlias
+			targetProfile, err := pick(
+				[]string{"--target", "--to", "--to-profile"},
+				[]string{targetProfile, toAlias, toProfileAlias})
+			if err != nil {
+				return err
 			}
-			if toProfileAlias != "" {
-				toProfile = toProfileAlias
+			if sourceProfile == "" {
+				sourceProfile = "cn"
 			}
-			if fromProfile == "" {
-				fromProfile = "cn"
+			if targetProfile == "" {
+				targetProfile = "global"
 			}
-			if toProfile == "" {
-				toProfile = "global"
+			if err := config.ValidateProfile(sourceProfile); err != nil {
+				return fmt.Errorf("invalid --source: %w", err)
 			}
-			if err := config.ValidateProfile(fromProfile); err != nil {
-				return fmt.Errorf("invalid --from: %w", err)
-			}
-			if err := config.ValidateProfile(toProfile); err != nil {
-				return fmt.Errorf("invalid --to: %w", err)
+			if err := config.ValidateProfile(targetProfile); err != nil {
+				return fmt.Errorf("invalid --target: %w", err)
 			}
 			if limit <= 0 {
 				return fmt.Errorf("limit must be > 0")
@@ -141,7 +161,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			ledgerPath := filepath.Join(cfgDir, fmt.Sprintf("sync-ledger-%s-%s.json", fromProfile, toProfile))
+			ledgerPath := filepath.Join(cfgDir, fmt.Sprintf("sync-ledger-%s-%s.json", sourceProfile, targetProfile))
 			ledger := loadSyncLedger(ledgerPath)
 			saveLedger := func() {
 				if b, err := json.MarshalIndent(ledger, "", "  "); err == nil {
@@ -149,9 +169,16 @@ Examples:
 				}
 			}
 			now := time.Now()
-			resolveSideRegion := func(flagName, profile string) (config.Region, error) {
-				if cmd.Flags().Changed(flagName) {
-					v, _ := cmd.Flags().GetString(flagName)
+			resolveSideRegion := func(canon, legacy, profile string) (config.Region, error) {
+				if cmd.Flags().Changed(canon) && cmd.Flags().Changed(legacy) {
+					return "", fmt.Errorf("use only one of --%s/--%s", canon, legacy)
+				}
+				name := canon
+				if !cmd.Flags().Changed(canon) && cmd.Flags().Changed(legacy) {
+					name = legacy
+				}
+				if cmd.Flags().Changed(canon) || cmd.Flags().Changed(legacy) {
+					v, _ := cmd.Flags().GetString(name)
 					return config.ParseRegion(v)
 				}
 				// No override: GARMIN_REGION env > the region recorded for this
@@ -168,20 +195,20 @@ Examples:
 				}
 				return config.RegionGlobal, nil
 			}
-			fromRegionParsed, err := resolveSideRegion("from-region", fromProfile)
+			fromRegionParsed, err := resolveSideRegion("source-region", "from-region", sourceProfile)
 			if err != nil {
-				return fmt.Errorf("invalid --from-region: %w", err)
+				return fmt.Errorf("invalid source region: %w", err)
 			}
-			toRegionParsed, err := resolveSideRegion("to-region", toProfile)
+			toRegionParsed, err := resolveSideRegion("target-region", "to-region", targetProfile)
 			if err != nil {
-				return fmt.Errorf("invalid --to-region: %w", err)
+				return fmt.Errorf("invalid target region: %w", err)
 			}
 
 			ctx := cmd.Context()
 			errOut := cmd.ErrOrStderr()
 
 			fmt.Fprintf(errOut, "Fetching activities from %s region...\n", fromRegionParsed)
-			fromClient, err := newAuthedClientFor(cmd, opts, fromProfile, fromRegionParsed)
+			fromClient, err := newAuthedClientFor(cmd, opts, sourceProfile, fromRegionParsed)
 			if err != nil {
 				return err
 			}
@@ -191,7 +218,7 @@ Examples:
 			}
 
 			fmt.Fprintf(errOut, "Fetching activities from %s region...\n", toRegionParsed)
-			toClient, err := newAuthedClientFor(cmd, opts, toProfile, toRegionParsed)
+			toClient, err := newAuthedClientFor(cmd, opts, targetProfile, toRegionParsed)
 			if err != nil {
 				return err
 			}
@@ -348,14 +375,22 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringVar(&fromProfile, "from", "", "Source profile (default: cn)")
-	cmd.Flags().StringVar(&toProfile, "to", "", "Target profile (default: global)")
-	cmd.Flags().StringVar(&fromProfileAlias, "from-profile", "", "Deprecated alias of --from")
+	cmd.Flags().StringVar(&sourceProfile, "source", "", "Source profile (default: cn)")
+	cmd.Flags().StringVar(&fromAlias, "from", "", "Alias of --source")
+	_ = cmd.Flags().MarkHidden("from")
+	cmd.Flags().StringVar(&fromProfileAlias, "from-profile", "", "Deprecated alias of --source")
 	_ = cmd.Flags().MarkHidden("from-profile")
-	cmd.Flags().StringVar(&toProfileAlias, "to-profile", "", "Deprecated alias of --to")
+	cmd.Flags().StringVar(&targetProfile, "target", "", "Target profile (default: global)")
+	cmd.Flags().StringVar(&toAlias, "to", "", "Alias of --target")
+	_ = cmd.Flags().MarkHidden("to")
+	cmd.Flags().StringVar(&toProfileAlias, "to-profile", "", "Deprecated alias of --target")
 	_ = cmd.Flags().MarkHidden("to-profile")
-	cmd.Flags().StringVar(&fromRegion, "from-region", "", "Override source region: cn or global (default: the region --from was logged in with)")
-	cmd.Flags().StringVar(&toRegion, "to-region", "", "Override target region: cn or global (default: the region --to was logged in with)")
+	cmd.Flags().StringVar(&sourceRegion, "source-region", "", "Override source region: cn or global (default: the region --source was logged in with)")
+	cmd.Flags().StringVar(&fromRegionAlias, "from-region", "", "Deprecated alias of --source-region")
+	_ = cmd.Flags().MarkHidden("from-region")
+	cmd.Flags().StringVar(&targetRegion, "target-region", "", "Override target region: cn or global (default: the region --target was logged in with)")
+	cmd.Flags().StringVar(&toRegionAlias, "to-region", "", "Deprecated alias of --target-region")
+	_ = cmd.Flags().MarkHidden("to-region")
 	cmd.Flags().IntVar(&limit, "limit", 10, "Max activities to check")
 	cmd.Flags().IntVar(&delay, "delay", 5, "Delay between uploads (seconds)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be synced without actually syncing")
