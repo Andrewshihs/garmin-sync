@@ -26,7 +26,7 @@ StartLimitBurst=3
 [Service]
 Type=oneshot
 ExecStartPre=/bin/sh -c "garmin auth status --profile cn --region cn -f json | grep -q authenticated"
-ExecStart=garmin sync --from cn --to global --limit 30 --delay 5
+ExecStart=garmin sync --source cn --target global --limit 30 --delay 5
 # Environment="HTTPS_PROXY=http://127.0.0.1:7890"
 # Environment="HTTP_PROXY=http://127.0.0.1:7890"
 # Environment="NO_PROXY=amazonaws.com,garmin.cn,127.0.0.1,localhost"

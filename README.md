@@ -71,11 +71,11 @@ the region saved for the profile at login → `global`.
 ## Activity sync
 
 ```sh
-# Defaults: --from cn --to global, last 30 activities, 5s between uploads
+# Defaults: --source cn --target global, last 30 activities, 5s between uploads
 garmin sync
 
 # Explicit
-garmin sync --from cn --to global --limit 30 --delay 5
+garmin sync --source cn --target global --limit 30 --delay 5
 
 # Preview without uploading
 garmin sync --dry-run
