@@ -295,7 +295,8 @@ func newTrainingReadinessCmd(opts *globalOptions) *cobra.Command {
 
 func newTrainingVo2maxCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "vo2max",
+		Use:     "vo2-max",
+		Aliases: []string{"vo2max"},
 		Short: "VO2 max estimates",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAuthedClient(cmd, opts)
@@ -527,7 +528,7 @@ like km/min, so an implied pace is shown next to it.`,
 				r := byDate[d]
 				rows = append(rows, []string{d, orDash(r.hr), orDash(r.speed), orDash(r.pace)})
 			}
-			return renderTableTo(cmd.OutOrStdout(), opts.Format, []string{"date", "lthr_bpm", "lt_speed_raw", "lt_pace"}, rows)
+			return renderTableTo(cmd.OutOrStdout(), opts.Format, []string{"date", "lthr_bpm", "lt_speed_km_min", "lt_pace"}, rows)
 		},
 	}
 
