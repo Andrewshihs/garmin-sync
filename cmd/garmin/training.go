@@ -297,7 +297,7 @@ func newTrainingVo2maxCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "vo2-max",
 		Aliases: []string{"vo2max"},
-		Short: "VO2 max estimates",
+		Short:   "VO2 max estimates",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAuthedClient(cmd, opts)
 			if err != nil {
