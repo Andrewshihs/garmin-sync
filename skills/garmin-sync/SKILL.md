@@ -1,97 +1,163 @@
 ---
 name: garmin-sync
-description: Query and sync Garmin Connect data via the garmin-sync CLI. Use when the user asks about Garmin activities, health metrics (sleep, heart rate, SpO2, stress, body battery, steps, respiration, intensity minutes), training metrics (readiness, VO2max, HRV, lactate threshold, training status), weight/body composition, or syncing activities between Garmin Connect regions (China CN and international Global).
+description: Query and sync Garmin Connect data via the garmin-sync CLI. Use when the user asks about Garmin activities, health metrics (sleep, heart rate, SpO2, stress, body battery, steps, respiration, intensity minutes), training metrics (readiness, training status, VO2max, HRV, lactate threshold, fitness age, race predictions), weight/body composition, or syncing activities between Garmin Connect regions (China CN and international Global).
 ---
 
 # Garmin Sync CLI
 
-Wrapper knowledge for the `garmin` binary (github.com/Andrewshihs/garmin-sync) —
+CLI reference for the `garmin` binary (github.com/Andrewshihs/garmin-sync) —
 a Garmin Connect CLI with dual-region (China / Global) support.
 
 ## Core model
 
 - Garmin splits accounts into regions: **CN** (garmin.cn) and **Global**
-  (garmin.com). Tokens are stored per **profile** under
-  `~/.config/garmin/tokens/<profile>/`. Common setup: profiles `cn` and
-  `global`.
-- Most data commands accept `-p/--profile <name>` and `--region cn|global`.
-  Pick the profile that owns the data you need — querying the wrong region
-  yields empty results or auth errors, not a clear message.
-- JSON output everywhere via `-f json`. Human tables otherwise.
+  (garmin.com). They do not see each other's data. Tokens are stored per
+  **profile** under `~/.config/garmin/tokens/<profile>/`. Common setup:
+  profiles `cn` and `global`.
+- Most commands take `-p/--profile <name>` and `--region cn|global`. Query the
+  profile that owns the data you need — querying the wrong region returns
+  empty results or auth errors without a clear explanation.
+- `-f json` on every data command. Prefer JSON for programmatic use; tables
+  are for humans.
 
-## Exit codes and empty states (important)
+## Dates (all query commands)
 
-| Exit | Meaning | JSON shape |
+| Flag | Meaning |
+| --- | --- |
+| `--date YYYY-MM-DD` | single day (default: today) |
+| `--from YYYY-MM-DD --to YYYY-MM-DD` | inclusive window |
+| `--days N` | last N days ending today |
+
+## Exit codes and empty states (critical)
+
+| Exit | Meaning | JSON shape on stdout |
 | --- | --- | --- |
-| 0 | data returned (or sync completed / "nothing to sync") | normal payload |
-| 1 | error, including **not authenticated** | `{"message": "not authenticated ...", ...}` |
+| 0 | data returned (sync: completed, including "nothing to sync") | normal payload |
+| 1 | error, including **not authenticated** | error JSON or message on stderr |
 | 2 | **no_data** — request valid, zero records for the window | `{"reason": "no_data", "detail": "..."}` |
 | 3 | **unsupported** — this account/device does not produce the metric | `{"reason": "unsupported", "detail": "..."}` |
 
-Rules for agents:
+Agent rules:
 
-- Exit 2 is a **normal outcome** (e.g. rest day → no activity; metric not yet
-  synced today). Never retry-loop on it; report "no data for <window>".
-- Exit 3 means don't ask again for this device/metric (e.g. some devices never
-  produce `training readiness`). Suggest checking the device model instead of
-  re-querying.
-- Exit 1 with "not authenticated" → run `garmin auth login --profile <p>
-  --region <r>` (interactive MFA may be required; cannot be automated).
-- Do not distinguish "device off today" from "metric missing" — the CLI cannot
-  know; both are exit 2.
+- Exit 2 is a normal outcome (rest day, metric not yet synced today). Report
+  "no data for <window>" — never retry-loop.
+- Exit 3 means the device never produces the metric (e.g. no `training
+  readiness` on non-supporting watches). Don't ask again for this
+  device/metric; suggest checking the device model.
+- Exit 1 + "not authenticated" → `garmin auth login --profile <p> --region
+  <r>` (interactive MFA; cannot be automated).
+- The CLI cannot distinguish "device was off" from "metric missing" — both
+  are exit 2.
 
-## Command map
+## Authentication
 
 ```sh
-# Activities (list/get/splits/export/upload/update/delete/weather)
-garmin activities list -p cn --region cn --days 7 -f json
-garmin activities get -p cn --region cn <activity-id> -f json
-
-# Health (all support --date / --from --to / --days)
-garmin health sleep -p cn --region cn --days 7 -f json
-garmin health heart-rate -p cn --region cn --date 2026-01-15
-garmin health spo2|stress|body-battery|steps|respiration|intensity-minutes|summary ...
-
-# Training
-garmin training readiness|status|hrv -p cn --region cn --days 7 -f json
-garmin training vo2-max -p cn --region cn          # alias: vo2max
-garmin training lactate-threshold -p cn --region cn --sport running -f json
-
-# Weight (body composition fields included)
-garmin weight list -p cn --region cn --days 30 -f json
-garmin weight latest -p cn --region cn
-
-# Sync activities CN -> Global (see below)
-garmin sync --source cn --target global --dry-run
+garmin auth login --profile cn --region cn --email you@example.com --password-stdin
+garmin auth login --profile global --region global --email you@example.com --password-stdin
+garmin auth status -p cn --region cn -f json
 ```
 
-Notes:
+Tokens auto-refresh (about hourly); expired refresh tokens require an
+interactive re-login.
 
-- Date flags: `--date` (single day) or `--from/--to` (inclusive) or `--days N`
-  (last N days). All accept `-f json`.
-- `training lactate-threshold`: window capped at 366 days by the API.
-- Raw API passthroughs (e.g. `activities get -f json`) return Garmin's own
-  camelCase field names; the parsed summaries use snake_case.
+## Activities
 
-## Sync semantics (garmin sync)
+### `activities list`
 
-- `--source/--target` name **profiles** (not regions). Regions resolve from
-  each profile's saved login region; `--source-region/--target-region`
-  override.
-- Direction is persistent-stateful: a ledger records every source activity
-  already handled. Re-running is always safe — it uploads only what the target
-  is missing, then exits 0 with "No new activities to sync". Never expect or
-  force a re-sync of a specific past activity.
-- Activities missing their original FIT (common for app-imported workouts) are
-  synced via TCX/GPX fallback. On the target side those copies may show type
-  `other` and an auto-derived name — expected.
-- `--dry-run` lists what would be uploaded without touching the target.
+| Parameter | Type | Requirement | Description |
+| --- | --- | --- | --- |
+| `-p/--profile` | string | recommended | Account profile (e.g. `cn`) |
+| `--region` | string | recommended | `cn` or `global` |
+| `--limit` | int | optional | Max activities (default 20) |
+| `--from/--to` | date | optional | Inclusive date window |
+| `--days N` | int | optional | Last N days |
+| `--type` | string | optional | Activity type filter (running, cycling, …) |
+| `-f json` | flag | optional | JSON output |
+
+**Returns:** id, local start time, type, name, distance (km), duration,
+calories, average HR.
+
+**Limits and notes:** newest first. Freshly recorded activities can take
+minutes-to-hours to appear; "missing today's workout" may be indexing delay.
+
+### Other activity subcommands
+
+| Command | Purpose |
+| --- | --- |
+| `activities get <id> -f json` | Full detail (raw Garmin JSON) |
+| `activities splits <id>` | Lap/split analysis |
+| `activities export <id> --type fit\|gpx\|tcx --out FILE` | Download original file |
+| `activities upload FILE` | Upload FIT/GPX/TCX to the profile's region |
+| `activities update <id> --name "..." --type ...` | Rename / retype |
+| `activities delete <id> --force` | Delete (irreversible) |
+| `activities weather <id>` | Weather recorded during the activity |
+
+## Health (per-day metrics; all accept the date flags and `-f json`)
+
+| Command | Fields returned |
+| --- | --- |
+| `health sleep` | score, total/deep/light/rem/awake seconds, avg SpO2, avg respiration, sleep start/end |
+| `health heart-rate` | resting, min, max |
+| `health spo2` | average, lowest, latest |
+| `health respiration` | avg waking, highest, lowest |
+| `health stress` | average, max, qualifier (`--values` adds the intraday timeline as JSON) |
+| `health body-battery` | highest, lowest, most recent, charged, drained |
+| `health steps` | steps, goal, distance |
+| `health intensity-minutes` | moderate, vigorous, weekly goal |
+| `health summary` | steps, resting HR, stress, body battery in one payload |
+
+## Training
+
+| Command | Fields returned |
+| --- | --- |
+| `training readiness` | score, level, sleep score, HRV weekly avg, acute load, recovery time |
+| `training status` | status phrase/id, weekly training load, trend (`"—"` phrase = no data) |
+| `training hrv` | last night avg, weekly avg, status, baseline |
+| `training vo2-max` (alias `vo2max`) | running, cycling |
+| `training fitness-age` | fitness age estimate |
+| `training race-predictions` | predicted 5K/10K/half/marathon times |
+| `training lactate-threshold [--sport running\|cycling]` | LTHR (bpm) and threshold speed time series; API caps the window at 366 days |
+
+## Weight
+
+| Command | Purpose |
+| --- | --- |
+| `weight list --days 30 -f json` | weigh-ins incl. weight/BMI/body fat/muscle/bone/visceral fat/metabolic age/source |
+| `weight latest` | most recent weigh-in |
+| `weight log 72.5 --date YYYY-MM-DD` | add a weigh-in |
+| `weight delete --sample-pk N --date YYYY-MM-DD --force` | delete (irreversible; requires exact pk+date pair) |
+
+## Sync (CN → Global activity copy)
+
+| Parameter | Type | Requirement | Description |
+| --- | --- | --- | --- |
+| `--source` | string | optional | Source profile (default `cn`) |
+| `--target` | string | optional | Target profile (default `global`) |
+| `--source-region/--target-region` | string | optional | Region override |
+| `--limit` | int | optional | Newest N activities to check (default 30 on schedulers) |
+| `--delay` | int | optional | Seconds between uploads |
+| `--dry-run` | flag | optional | List what would be uploaded, touch nothing |
+| `--notify-bark KEY` | string | optional | Phone push on failures (api.day.app) |
+
+**Returns (JSON):** counts plus `successes` (source/target IDs) and `failures`
+(activity, reason).
+
+**Limits and notes:**
+
+- Identity = name + type + start time; a persistent ledger also remembers
+  everything already handled, so re-running is always safe and duplicates
+  (including target-side copies made by other tools) are skipped.
+- Activities missing their original FIT sync via TCX/GPX fallback. On the
+  target those copies may show type `other` and an auto-derived name.
+- "No new activities to sync" + exit 0 = steady state, not an error.
+- Ignore the global `-p/--profile` and `--region` flags here — sync defines
+  its own direction flags.
 
 ## Known data quirks
 
-- Freshly recorded activities may take minutes-to-hours to appear in list
-  APIs; a "missing today's workout" answer may just be indexing delay.
-- Devices that don't produce a metric return exit 2/3 forever (e.g. no
-  readiness on non-supporting watches) — see exit-code table.
-- Lactate threshold history only exists if the ecosystem computed it; empty on
+- Fresh activities may take minutes-to-hours to appear in list APIs.
+- Metrics the device doesn't produce (e.g. readiness on some watches) return
+  exit 2/3 forever — see the exit-code table.
+- Lactate threshold history needs the ecosystem to have computed it; empty on
   fresh accounts.
+- Training status uses a literal `"—"` phrase for days without data.
