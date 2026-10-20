@@ -88,6 +88,19 @@ activities (strength training, badminton) are synced via their TCX export.
 Exit codes: `0` ok (including "nothing to sync"), `1` error/not
 authenticated, `2` no data, `3` metric not produced by this device/account.
 
+## Agent skill
+
+A [SKILL.md](skills/garmin-sync/SKILL.md) is bundled for AI agents (Claude
+Code, ZCode, and other agent-skill-compatible runtimes) covering the command
+map, exit codes, empty-state semantics, and data quirks. Install:
+
+```sh
+# ZCode / generic skills directory
+ln -s "$(pwd)/skills/garmin-sync" ~/.zcode/skills/garmin-sync
+# Claude Code
+ln -s "$(pwd)/skills/garmin-sync" ~/.claude/skills/garmin-sync
+```
+
 ## Scheduling
 
 A daily systemd user timer works well. See
