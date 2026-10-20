@@ -161,3 +161,22 @@ minutes-to-hours to appear; "missing today's workout" may be indexing delay.
 - Lactate threshold history needs the ecosystem to have computed it; empty on
   fresh accounts.
 - Training status uses a literal `"—"` phrase for days without data.
+- Health payloads store Garmin's raw camelCase keys: in `cache query` use
+  `json_extract(payload, '$.restingHeartRate')`, not snake_case.
+
+## SQL tips (`garmin cache query`)
+
+```sql
+-- 7-day resting HR trend
+SELECT date, json_extract(payload, '$.restingHeartRate') AS resting_hr
+FROM samples WHERE profile = 'cn' AND metric = 'daily_summary' ORDER BY date;
+
+-- weekly running volume
+SELECT type, COUNT(*) AS n, ROUND(SUM(json_extract(payload, '$.distance_meters'))/1000.0, 1) AS km
+FROM activities WHERE profile = 'cn' GROUP BY type ORDER BY km DESC;
+
+-- sleep score trend (minutes)
+SELECT date, json_extract(payload, '$.score') AS score,
+       json_extract(payload, '$.total_sleep_seconds')/60.0 AS sleep_min
+FROM samples WHERE metric = 'sleep' ORDER BY date;
+```
