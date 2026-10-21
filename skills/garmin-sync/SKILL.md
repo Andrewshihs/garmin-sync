@@ -164,14 +164,17 @@ activity:
 garmin activities weather <activity-id> -p cn --region cn -f json
 ```
 
-**Returns:** `temp`, `apparent_temp` (feels-like), `relative_humidity`,
-`wind_speed`, `wind_direction`, `description` (e.g. clear/rain).
+**Returns:** `temp`, `apparent_temp` (feels-like), `dew_point`,
+`relative_humidity` (%), `wind_speed`, `wind_direction`, `description`
+(e.g. clear/rain). **Temperatures are in °F** as returned by Garmin's API
+(verify: dew point and RH are mutually consistent only in °F for the same
+sample). Convert with °C = (°F − 32) × 5/9.
 
 Agent guidance:
 
-- Apparent temperature ≥ ~25 °C with high humidity typically adds 10–25 bpm
-  at the same pace (cardiac drift) — a "slower" run in heat is not necessarily
-  lost fitness.
+- Convert to °C first, then judge: apparent temperature ≥ ~25 °C with high
+  humidity typically adds 10–25 bpm at the same pace (cardiac drift) — a
+  "slower" run in heat is not necessarily lost fitness.
 - Strong headwind effectively adds pace cost that GPS pace does not explain.
 - Indoor/treadmill activities return no weather — treat missing weather as
   "unknown conditions", not an error.
