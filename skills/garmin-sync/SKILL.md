@@ -88,6 +88,7 @@ minutes-to-hours to appear; "missing today's workout" may be indexing delay.
 | `activities splits <id>` | Lap/split analysis |
 | `activities export <id> --type fit\|gpx\|tcx --out FILE` | Download original file |
 | `activities upload FILE` | Upload FIT/GPX/TCX to the profile's region |
+| `activities weather <id>` | Weather recorded during the activity (temp, apparent temp, humidity, wind, description) |
 | `activities update <id> --name "..." --type ...` | Rename / retype |
 | `activities delete <id> --force` | Delete (irreversible) |
 | `activities weather <id>` | Weather recorded during the activity |
@@ -152,6 +153,30 @@ minutes-to-hours to appear; "missing today's workout" may be indexing delay.
 - "No new activities to sync" + exit 0 = steady state, not an error.
 - Ignore the global `-p/--profile` and `--region` flags here — sync defines
   its own direction flags.
+
+## Outdoor analysis: factor in weather
+
+Pace and heart rate are strongly affected by conditions. Before attributing a
+pace/HR change to fitness, check the weather recorded during each outdoor
+activity:
+
+```sh
+garmin activities weather <activity-id> -p cn --region cn -f json
+```
+
+**Returns:** `temp`, `apparent_temp` (feels-like), `relative_humidity`,
+`wind_speed`, `wind_direction`, `description` (e.g. clear/rain).
+
+Agent guidance:
+
+- Apparent temperature ≥ ~25 °C with high humidity typically adds 10–25 bpm
+  at the same pace (cardiac drift) — a "slower" run in heat is not necessarily
+  lost fitness.
+- Strong headwind effectively adds pace cost that GPS pace does not explain.
+- Indoor/treadmill activities return no weather — treat missing weather as
+  "unknown conditions", not an error.
+- When comparing two activities, fetch weather for BOTH before drawing
+  conclusions.
 
 ## Known data quirks
 
