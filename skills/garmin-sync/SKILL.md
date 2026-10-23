@@ -1,6 +1,6 @@
 ---
 name: garmin-sync
-description: Query and sync Garmin Connect data via the garmin-sync CLI. Use when the user asks about Garmin activities, health metrics (sleep, heart rate, SpO2, stress, body battery, steps, respiration, intensity minutes), training metrics (readiness, training status, VO2max, HRV, lactate threshold, fitness age, race predictions), weight/body composition, or syncing activities between Garmin Connect regions (China CN and international Global).
+description: Query and sync Garmin Connect data via the garmin-sync CLI. Use when the user asks about Garmin activities, health metrics (sleep, heart rate, SpO2, stress, body battery, steps, respiration, intensity minutes), training metrics (readiness, training status, VO2max, HRV, lactate threshold, fitness age, race predictions), weight/body composition, syncing activities between Garmin Connect regions (China CN and international Global), or asks for fitness coaching, training readiness assessment, post-workout analysis, or weekly training review.
 ---
 
 # Garmin Sync CLI
@@ -153,6 +153,80 @@ minutes-to-hours to appear; "missing today's workout" may be indexing delay.
 - "No new activities to sync" + exit 0 = steady state, not an error.
 - Ignore the global `-p/--profile` and `--region` flags here — sync defines
   its own direction flags.
+
+## Coaching workflows
+
+These workflows compose the commands above into coaching-quality output. Each
+one lists the exact commands to run, what to look for, and what to report.
+
+### Morning readiness
+
+Assess whether today is a full, reduced, or rest day.
+
+```sh
+# Run these (default --date is today):
+garmin training readiness -p cn --region cn --days 1 -f json
+garmin health sleep -p cn --region cn --days 1 -f json
+garmin training hrv -p cn --region cn --days 1 -f json
+garmin health summary -p cn --region cn --days 1 -f json
+```
+
+Look at: readiness score (0–100), sleep score, HRV (last night vs weekly avg),
+resting HR vs recent baseline, stress avg, Body Battery high.
+
+**Report to the user:** readiness score + level, sleep quality summary,
+HRV trend direction (rising/stable/falling vs weekly avg), any metric
+significantly outside its recent range, and today's recommendation
+(full effort / reduced / rest).
+
+If exit 3 → this device doesn't produce readiness; fall back to sleep score
++ HRV alone and note "readiness not available on this device".
+
+### Post-training analysis
+
+Analyse a completed activity in context (weather, splits, HR, comparison with
+recent trend).
+
+```sh
+garmin activities list -p cn --region cn --days 1 -f json
+garmin activities splits <activity-id> -p cn --region cn
+garmin activities weather <activity-id> -p cn --region cn -f json
+garmin training readiness -p cn --region cn --days 1 -f json
+```
+
+**Report:** distance/duration/pace summary, split analysis (positive or
+negative split?), weather impact (see the weather section below),
+HR zones reached, comparison with the athlete's recent average pace for
+the same distance, recovery status from today's readiness.
+
+### Weekly review
+
+End-of-week volume and load trends.
+
+```sh
+garmin activities list -p cn --region cn --days 7 -f json
+garmin cache query "SELECT date, json_extract(payload,'$.restingHeartRate') AS rhr,
+    json_extract(payload,'$.averageStressLevel') AS stress,
+    json_extract(payload,'$.bodyBatteryHighestValue') AS bb_high
+  FROM v_daily_metrics WHERE date >= date('now','-7 days') ORDER BY date"
+garmin training readiness -p cn --region cn --days 7 -f json
+```
+
+**Report:** weekly volume by activity type, total distance/time, rest days
+taken, ACWR direction (if computable from available data), HRV/RHR trend
+(stable/rising/falling = recovery quality), and next-week guidance.
+
+### Data backfill
+
+Keep the local SQLite cache up to date for the SQL views.
+
+```sh
+garmin cache backfill -p cn --region cn --days 30
+```
+
+Run this daily (or before any SQL analysis) so `v_daily_metrics`, `v_sleep`,
+and `v_activities` reflect the latest data. The backfill is idempotent:
+existing rows are updated in place.
 
 ## Outdoor analysis: factor in weather
 
