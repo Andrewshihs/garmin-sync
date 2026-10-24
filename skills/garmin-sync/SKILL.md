@@ -20,6 +20,34 @@ a Garmin Connect CLI with dual-region (China / Global) support.
 - `-f json` on every data command. Prefer JSON for programmatic use; tables
   are for humans.
 
+## Data sources (dual pipeline, automatic)
+
+Read commands route automatically — agents never choose a pipeline:
+
+- **Personal API (official)**: used when an API key file exists —
+  `~/.config/garmin/connect-personal-api-key-cn` (CN, created at
+  connect.garmin.cn/app/settings/personalApiToken) or
+  `~/.config/garmin/connect-personal-api-key` (Global). Officially documented
+  endpoints, immune to reverse-engineered breakage. Bearer JWT (24h) is
+  exchanged and cached automatically.
+- **OAuth (fallback)**: no key, or token exchange failed → same behavior as
+  before. Also the ONLY pipeline for endpoints outside the official
+  whitelist (readiness, lactate threshold, VO2max, training status, race
+  predictions, weather, splits, export, stress `--values`) and for ALL write
+  commands (sync/upload/delete/update/log — the Personal API is read-only).
+
+Key facts: keys expire after up to 1 year (re-create in Garmin Connect
+settings and overwrite the file); a stale key fails token exchange and the
+CLI silently falls back to OAuth.
+
+**Semantic differences between pipelines** (matters when comparing history):
+
+- `health respiration` `avg_waking`: Personal pipeline reports an all-day
+  average, OAuth reports a waking-only average — do not mix numbers from the
+  two pipelines in one trend.
+- `health sleep` start/end: Personal pipeline renders timestamps in the
+  host's timezone.
+
 ## Dates (all query commands)
 
 | Flag | Meaning |
@@ -265,6 +293,29 @@ Agent guidance:
 - Training status uses a literal `"—"` phrase for days without data.
 - Health payloads store Garmin's raw camelCase keys: in `cache query` use
   `json_extract(payload, '$.restingHeartRate')`, not snake_case.
+
+## MCP server (`garmin mcp`)
+
+The same binary runs an MCP server on stdio for agents that prefer MCP over
+CLI shell-out (16 read tools: get_sleep, get_heart_rate, get_spo2,
+get_stress, get_body_battery, get_daily_summary, get_training_readiness,
+get_training_status, get_hrv, get_vo2max, get_hr_zones,
+get_lactate_threshold, list_activities, get_activity, get_activity_weather,
+get_weight). It also prefers the Personal API pipeline when a key exists.
+
+```json
+{
+  "mcpServers": {
+    "garmin": {
+      "command": "/usr/local/bin/garmin",
+      "args": ["mcp", "--profile", "cn", "--region", "cn"]
+    }
+  }
+}
+```
+
+Note: `--profile`/`--region` here are the mcp subcommand's own flags (no
+shorthand); the server serves one profile+region per process.
 
 ## SQL tips (`garmin cache query`)
 
