@@ -343,6 +343,30 @@ Examples:
 				}
 
 				newID := res.FirstActivityID()
+				if newID == 0 {
+					// TCX/GPX uploads are processed asynchronously and often
+					// return without an internal id; recover it from the
+					// target's recent list by start-time proximity (best
+					// effort — indexing may lag).
+					if recent, lerr := activities.List(ctx, toClient, 30, "", "", ""); lerr == nil {
+						if st, perr := time.Parse("2006-01-02 15:04:05", act.StartTime); perr == nil {
+							for _, t := range recent {
+								tt, terr := time.Parse("2006-01-02 15:04:05", t.StartTimeLocal)
+								if terr != nil {
+									continue
+								}
+								d := tt.Sub(st)
+								if d < 0 {
+									d = -d
+								}
+								if d <= 3*time.Minute {
+									newID = t.ID
+									break
+								}
+							}
+						}
+					}
+				}
 				if res.Duplicate() {
 					// Garmin rejected the upload as an identical re-upload of an
 					// activity already on the target side (typically a copy made

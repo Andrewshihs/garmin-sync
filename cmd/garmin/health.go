@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Andrewshihs/garmin-sync/internal/client"
 	garminhealth "github.com/Andrewshihs/garmin-sync/internal/health"
 	"github.com/Andrewshihs/garmin-sync/internal/output"
 	"github.com/Andrewshihs/garmin-sync/internal/timeutil"
@@ -46,7 +47,7 @@ func newHealthSpo2Cmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -99,7 +100,7 @@ func newHealthRespirationCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -152,7 +153,7 @@ func newHealthIntensityMinutesCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -214,7 +215,7 @@ func newHealthSummaryCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -306,7 +307,7 @@ func newHealthSleepCmd(opts *globalOptions) *cobra.Command {
 				return err
 			}
 
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -390,7 +391,7 @@ func newHealthHeartRateCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -458,7 +459,7 @@ func newHealthStepsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -527,7 +528,14 @@ func newHealthStressCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			// The intraday timeline (--values) is not served by the Personal
+			// API gateway; only the daily summary is.
+			var c *client.Client
+			if values {
+				c, err = newAuthedClient(cmd, opts)
+			} else {
+				c, err = newQueryClient(cmd, opts, true)
+			}
 			if err != nil {
 				return err
 			}
@@ -607,7 +615,7 @@ func newHealthBodyBatteryCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}

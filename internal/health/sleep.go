@@ -70,6 +70,14 @@ func garminLocalTimestamp(gmtMillis, localMillis *int64) *string {
 }
 
 func GetSleep(ctx context.Context, c *client.Client, date string) (SleepSummary, error) {
+	if c.PersonalPipeline() {
+		var raw dailySleepOfficial
+		q := url.Values{"date": {date}}
+		if err := c.GetJSON(ctx, "/sleep-service/sleep/dailySleep", q, &raw); err != nil {
+			return SleepSummary{}, err
+		}
+		return sleepFromOfficial(date, &raw), nil
+	}
 	var resp SleepDailyResponse
 	q := url.Values{"date": {date}}
 	if err := c.GetJSON(ctx, "/sleep-service/sleep/dailySleepData", q, &resp); err != nil {

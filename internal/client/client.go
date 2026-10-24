@@ -119,6 +119,15 @@ func NewWithSession(configDir, profile string, session *auth.Session, opts Optio
 }
 
 // Region reports which Connect instance this client talks to.
+// PersonalPipeline reports whether this client talks to Garmin's Personal
+// API gateway (personal.connectapi.*), which serves only the officially
+// documented read endpoints.
+func (c *Client) PersonalPipeline() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return strings.HasPrefix(c.baseURL, "https://personal.")
+}
+
 func (c *Client) Region() config.Region {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

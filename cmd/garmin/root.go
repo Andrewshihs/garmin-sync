@@ -132,6 +132,8 @@ func NewRootCmd(version string) *cobra.Command {
 		NewRecordsCmd(opts),
 		NewSyncCmd(opts),
 		NewTodayCmd(opts),
+		NewCacheCmd(opts),
+		newMCPCmd(opts),
 		NewCompletionCmd(),
 		NewVersionCmd(version),
 	)

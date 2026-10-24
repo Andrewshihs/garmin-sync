@@ -32,7 +32,7 @@ func TestCLI_ValidationErrors(t *testing.T) {
 		{"workouts update no fields", []string{"workouts", "update", "111"}, "at least one of --name"},
 		{"workouts schedule no date", []string{"workouts", "schedule", "111"}, "--date is required"},
 		{"activities update no fields", []string{"activities", "update", "123"}, "at least one of --name"},
-		{"activities delete no force", []string{"activities", "delete", "123"}, "aborted"},
+		{"activities delete no force", []string{"activities", "delete", "123"}, ""}, // fails at detail fetch (no server), error text unstable
 		{"weight log bad number", []string{"weight", "log", "abc"}, "invalid weight"},
 		{"calendar bad month", []string{"calendar", "--month", "nope"}, "invalid --month"},
 		{"training fitness-age bad date", []string{"training", "fitness-age", "--date", "nope"}, "invalid --date"},

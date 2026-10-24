@@ -42,7 +42,7 @@ func newWeightListCmd(opts *globalOptions) *cobra.Command {
 				return err
 			}
 
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -87,7 +87,7 @@ func newWeightLatestCmd(opts *globalOptions) *cobra.Command {
 		Use:   "latest",
 		Short: "Show the most recent weigh-in",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}

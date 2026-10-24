@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 
@@ -30,4 +31,24 @@ func confirmDestructive(cmd *cobra.Command, prompt string, force bool) bool {
 	default:
 		return false
 	}
+}
+
+// confirmExecution implements the two-phase destructive flow: the caller
+// prints a preview of the exact target, then calls this with the user's
+// decision flags. With --confirm or --force it returns true; otherwise it
+// prompts on an interactive TTY, or instructs a non-interactive caller to
+// re-run with --confirm (the dsh-plugin confirmationId pattern, stateless
+// variant for a CLI).
+func confirmExecution(cmd *cobra.Command, preview string, confirmed bool) (bool, error) {
+	if confirmed {
+		return true, nil
+	}
+	if f, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		if confirmDestructive(cmd, preview+" — execute? [y/N]: ", false) {
+			return true, nil
+		}
+		return false, fmt.Errorf("aborted")
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s\nNon-interactive session: re-run with --confirm to execute.\n", preview)
+	return false, fmt.Errorf("confirmation required (pass --confirm)")
 }

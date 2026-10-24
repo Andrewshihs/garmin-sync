@@ -89,6 +89,27 @@ func List(ctx context.Context, c *client.Client, startDate, endDate string) ([]W
 	if err := validateDate(endDate); err != nil {
 		return nil, err
 	}
+	if c.PersonalPipeline() {
+		// Official Personal API path; latestWeight carries the same field
+		// names as the legacy raw shape.
+		var raw struct {
+			DailyWeightSummaries []struct {
+				SummaryDate  string      `json:"summaryDate"`
+				LatestWeight *weighInRaw `json:"latestWeight"`
+			} `json:"dailyWeightSummaries"`
+		}
+		path := fmt.Sprintf("/weight-service/weight/range/%s/%s?includeAll=true", startDate, endDate)
+		if err := c.GetJSON(ctx, path, nil, &raw); err != nil {
+			return nil, err
+		}
+		out := make([]WeighIn, 0, len(raw.DailyWeightSummaries))
+		for _, d := range raw.DailyWeightSummaries {
+			if d.LatestWeight != nil {
+				out = append(out, d.LatestWeight.toWeighIn())
+			}
+		}
+		return out, nil
+	}
 	q := url.Values{"startDate": {startDate}, "endDate": {endDate}}
 	var raw rangeRaw
 	if err := c.GetJSON(ctx, "/weight-service/weight/dateRange", q, &raw); err != nil {

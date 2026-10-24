@@ -25,6 +25,13 @@ type spo2Raw struct {
 }
 
 func GetSpO2(ctx context.Context, c *client.Client, date string) (SpO2Summary, error) {
+	if c.PersonalPipeline() {
+		e, err := fetchV2Day(ctx, c, date)
+		if err != nil {
+			return SpO2Summary{}, err
+		}
+		return spo2FromV2(date, e), nil
+	}
 	var raw spo2Raw
 	if err := c.GetJSON(ctx, "/wellness-service/wellness/daily/spo2/"+date, nil, &raw); err != nil {
 		return SpO2Summary{}, err
@@ -54,6 +61,13 @@ type respirationRaw struct {
 }
 
 func GetRespiration(ctx context.Context, c *client.Client, date string) (RespirationSummary, error) {
+	if c.PersonalPipeline() {
+		e, err := fetchV2Day(ctx, c, date)
+		if err != nil {
+			return RespirationSummary{}, err
+		}
+		return respirationFromV2(date, e), nil
+	}
 	var raw respirationRaw
 	if err := c.GetJSON(ctx, "/wellness-service/wellness/daily/respiration/"+date, nil, &raw); err != nil {
 		return RespirationSummary{}, err
@@ -83,6 +97,13 @@ type intensityRaw struct {
 }
 
 func GetIntensityMinutes(ctx context.Context, c *client.Client, date string) (IntensityMinutesSummary, error) {
+	if c.PersonalPipeline() {
+		e, err := fetchV2Day(ctx, c, date)
+		if err != nil {
+			return IntensityMinutesSummary{}, err
+		}
+		return intensityMinutesFromV2(date, e), nil
+	}
 	var raw intensityRaw
 	if err := c.GetJSON(ctx, fmt.Sprintf("/wellness-service/wellness/daily/im/%s", date), nil, &raw); err != nil {
 		return IntensityMinutesSummary{}, err

@@ -152,7 +152,7 @@ func newActivitiesUpdateCmd(opts *globalOptions) *cobra.Command {
 }
 
 func newActivitiesDeleteCmd(opts *globalOptions) *cobra.Command {
-	var force bool
+	var confirmFlag, force bool
 
 	cmd := &cobra.Command{
 		Use:   "delete [activity-id]",
@@ -164,16 +164,24 @@ func newActivitiesDeleteCmd(opts *globalOptions) *cobra.Command {
 				return fmt.Errorf("invalid activity id %q", args[0])
 			}
 
-			if !confirmDestructive(cmd, fmt.Sprintf("Delete activity %s? This cannot be undone.", args[0]), force) {
-				return fmt.Errorf("aborted: pass --force to delete non-interactively")
-			}
-
 			c, err := newAuthedClient(cmd, opts)
 			if err != nil {
 				return err
 			}
-
 			ctx := cmd.Context()
+
+			// 先读取目标并展示，确认所删无误（也提前暴露不存在/无权限）。
+			raw, err := garminactivities.GetRaw(ctx, c, id)
+			if err != nil {
+				return handleAuthedErrorTo(cmd.ErrOrStderr(), opts, err)
+			}
+			det := garminactivities.SummarizeDetail(id, raw)
+			preview := fmt.Sprintf("Deleting activity %d: %s (%s, %s)",
+				id, det.Name, det.Type, det.StartTimeLocal)
+			if _, err := confirmExecution(cmd, preview, confirmFlag || force); err != nil {
+				return err
+			}
+
 			if err := garminactivities.Delete(ctx, c, id); err != nil {
 				return handleAuthedErrorTo(cmd.ErrOrStderr(), opts, err)
 			}
@@ -185,7 +193,8 @@ func newActivitiesDeleteCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVar(&confirmFlag, "confirm", false, "Execute the deletion (required non-interactively)")
+	cmd.Flags().BoolVar(&force, "force", false, "Alias of --confirm")
 	return cmd
 }
 
@@ -212,7 +221,7 @@ func newActivitiesListCmd(opts *globalOptions) *cobra.Command {
 				return err
 			}
 
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -338,7 +347,7 @@ func newActivitiesSplitsCmd(opts *globalOptions) *cobra.Command {
 				return fmt.Errorf("invalid activity id %q", args[0])
 			}
 
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}

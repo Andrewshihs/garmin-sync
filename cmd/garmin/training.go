@@ -30,6 +30,7 @@ func NewTrainingCmd(opts *globalOptions) *cobra.Command {
 		newTrainingVo2maxCmd(opts),
 		newTrainingHrvCmd(opts),
 		newTrainingLactateThresholdCmd(opts),
+		newTrainingHRZonesCmd(opts),
 		newTrainingFitnessAgeCmd(opts),
 		newTrainingRacePredictionsCmd(opts),
 	)
@@ -335,7 +336,7 @@ func newTrainingHrvCmd(opts *globalOptions) *cobra.Command {
 		Use:   "hrv",
 		Short: "Heart rate variability",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := newAuthedClient(cmd, opts)
+			c, err := newQueryClient(cmd, opts, true)
 			if err != nil {
 				return err
 			}
@@ -536,5 +537,71 @@ like km/min, so an implied pace is shown next to it.`,
 	cmd.Flags().StringVar(&from, "from", "", "Start date (YYYY-MM-DD, inclusive; default: 365 days ago)")
 	cmd.Flags().StringVar(&to, "to", "", "End date (YYYY-MM-DD, inclusive; default: today)")
 	cmd.Flags().IntVar(&days, "days", 0, "Shortcut: last N days (ending today)")
+	return cmd
+}
+
+type hrZoneSummary struct {
+	Sport      string `json:"sport"`
+	Method     string `json:"method"`
+	RestingHR  int    `json:"resting_hr"`
+	MaxHR      int    `json:"max_hr"`
+	LTHR       int    `json:"lthr"`
+	Zone1Floor int    `json:"zone1_floor"`
+	Zone2Floor int    `json:"zone2_floor"`
+	Zone3Floor int    `json:"zone3_floor"`
+	Zone4Floor int    `json:"zone4_floor"`
+	Zone5Floor int    `json:"zone5_floor"`
+}
+
+func newTrainingHRZonesCmd(opts *globalOptions) *cobra.Command {
+	var sport string
+
+	cmd := &cobra.Command{
+		Use:   "hr-zones",
+		Short: "Heart rate zone configuration",
+		Long: `Heart rate zone boundaries and thresholds for the account.
+
+Returns the HR zone floors (zone 1–5), max HR, resting HR, and lactate
+threshold HR for the specified sport (or the default sport configuration).`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newQueryClient(cmd, opts, true)
+			if err != nil {
+				return err
+			}
+
+			zones, err := garmintraining.GetHRZones(cmd.Context(), c, strings.ToUpper(sport))
+			if err != nil {
+				return handleAuthedErrorTo(cmd.ErrOrStderr(), opts, err)
+			}
+
+			if opts.Format == "json" {
+				return output.JSONTo(cmd.OutOrStdout(), zones)
+			}
+			if len(zones) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No heart rate zones configured.")
+				return nil
+			}
+			rows := make([][]string, 0, len(zones))
+			for _, z := range zones {
+				rows = append(rows, []string{
+					z.Sport,
+					z.TrainingMethod,
+					strconv.Itoa(z.RestingHeartRateUsed),
+					strconv.Itoa(z.Zone1Floor),
+					strconv.Itoa(z.Zone2Floor),
+					strconv.Itoa(z.Zone3Floor),
+					strconv.Itoa(z.Zone4Floor),
+					strconv.Itoa(z.Zone5Floor),
+					strconv.Itoa(z.MaxHeartRateUsed),
+					strconv.Itoa(z.LactateThresholdHeartRateUsed),
+				})
+			}
+			return renderTableTo(cmd.OutOrStdout(), opts.Format,
+				[]string{"sport", "method", "resting_hr", "z1", "z2", "z3", "z4", "z5", "max_hr", "lthr"},
+				rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&sport, "sport", "", "Filter by sport (e.g. RUNNING, CYCLING; default: all)")
 	return cmd
 }

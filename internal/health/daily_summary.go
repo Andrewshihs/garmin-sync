@@ -37,6 +37,13 @@ func (d DailySummary) CalendarDateOr(fallback string) string {
 }
 
 func GetDailySummary(ctx context.Context, c *client.Client, date string) (DailySummary, error) {
+	if c.PersonalPipeline() {
+		e, err := fetchV2Day(ctx, c, date)
+		if err != nil {
+			return DailySummary{}, err
+		}
+		return dailySummaryFromV2(e), nil
+	}
 	var resp DailySummary
 	q := url.Values{"calendarDate": {date}}
 	err := c.GetJSON(ctx, "/usersummary-service/usersummary/daily/", q, &resp)
